@@ -65,7 +65,7 @@ def run_scan(option):
     """Run a single PKScreener scan and return raw output."""
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pkscreener.pkscreenercli", "--testbuild", "-o", option, "-a", "Y"],
+            [sys.executable, "-m", "pkscreener.pkscreenercli", "-o", option, "-a", "Y"],
             capture_output=True, text=True, timeout=300
         )
         return result.stdout + result.stderr
