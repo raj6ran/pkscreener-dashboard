@@ -21,7 +21,7 @@ OUTPUT_FILE = "data.json"
 # ─── SCANS TO RUN ─────────────────────────────────────────────────────────────
 # Keeping only 1 scan to stay within GitHub Actions 30-min timeout
 SCANS = [
-    ("Breakout Stocks", "X:12:7", "BREAKOUT"),
+    ("Breakout Stocks", "X:1:7", "BREAKOUT"),
 ]
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────
