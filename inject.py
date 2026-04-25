@@ -9,8 +9,8 @@ import os
 import re
 
 DATA_FILE      = "data.json"
-TEMPLATE_FILE  = "dashboard.html"
-OUTPUT_FILE    = "dashboard.html"
+TEMPLATE_FILE  = "index.html"
+OUTPUT_FILE    = "index.html"
 
 def main():
     if not os.path.exists(DATA_FILE):
