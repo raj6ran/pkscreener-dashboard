@@ -1,16 +1,21 @@
 """
 inject.py
-Reads data.json produced by scan.py and injects it into dashboard.html
-so the final HTML file is fully self-contained with fresh data.
+Reads data.json produced by scan.py and injects it into index.html.
+Strips any previous injection before adding the new one.
 """
 
 import json
 import os
 import re
 
-DATA_FILE      = "data.json"
-TEMPLATE_FILE  = "index.html"
-OUTPUT_FILE    = "index.html"
+DATA_FILE     = "data.json"
+TEMPLATE_FILE = "index.html"
+OUTPUT_FILE   = "index.html"
+
+# Marks the boundary of the injected block
+INJECT_START = "// ─── INJECTED BY GITHUB ACTIONS"
+INJECT_END   = "// ─────────────────────────────────────────────────────────────────────────────"
+INIT_MARKER  = "// ── INIT ──────────────────────────────────────────────────────────────────────"
 
 def main():
     if not os.path.exists(DATA_FILE):
@@ -23,55 +28,73 @@ def main():
     with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
         html = f.read()
 
-    # Inject the data as a JS variable right before </script> closing tag
-    injection = f"""
-// ─── INJECTED BY GITHUB ACTIONS ──────────────────────────────────────────────
+    # ── Strip ALL previous injections ────────────────────────────────────────
+    # Remove every block from INJECT_START to INJECT_END (inclusive)
+    pattern = re.compile(
+        r'// ─── INJECTED BY GITHUB ACTIONS.*?// ─{20,}\n?',
+        re.DOTALL
+    )
+    html = pattern.sub('', html)
+    print(f"[+] Stripped old injections.")
+
+    # ── Build new injection (uses correct JS names: data / render) ───────────
+    injection = f"""// ─── INJECTED BY GITHUB ACTIONS ──────────────────────────────────────────────
 const LIVE_DATA = {json.dumps(data, indent=2)};
 
-// Override SAMPLE_DATA with live data on page load
 window.addEventListener('DOMContentLoaded', function() {{
-  // Update market values
+  if (LIVE_DATA.stocks && LIVE_DATA.stocks.length > 0) {{
+    // Populate table with live stocks
+    data = LIVE_DATA.stocks;
+    render(data);
+  }}
+
+  // Market indices
   if (LIVE_DATA.market && LIVE_DATA.market.nifty) {{
     document.getElementById('niftyVal').textContent  = LIVE_DATA.market.nifty.toLocaleString('en-IN', {{minimumFractionDigits:2}});
     document.getElementById('sensexVal').textContent = LIVE_DATA.market.sensex.toLocaleString('en-IN', {{minimumFractionDigits:2}});
     const nChg = LIVE_DATA.market.niftyChg;
     const sChg = LIVE_DATA.market.sensexChg;
-    document.getElementById('niftyChg').textContent  = (nChg >= 0 ? '+' : '') + nChg.toFixed(2) + '%';
-    document.getElementById('sensexChg').textContent = (sChg >= 0 ? '+' : '') + sChg.toFixed(2) + '%';
-    document.getElementById('niftyChg').style.color  = nChg >= 0 ? 'var(--bull)' : 'var(--bear)';
-    document.getElementById('sensexChg').style.color = sChg >= 0 ? 'var(--bull)' : 'var(--bear)';
+    const ne = document.getElementById('niftyChg');
+    const se = document.getElementById('sensexChg');
+    ne.textContent = (nChg >= 0 ? '+' : '') + nChg.toFixed(2) + '%';
+    se.textContent = (sChg >= 0 ? '+' : '') + sChg.toFixed(2) + '%';
+    ne.className = 'mpill-chg ' + (nChg >= 0 ? 'up' : 'dn');
+    se.className = 'mpill-chg ' + (sChg >= 0 ? 'up' : 'dn');
   }}
 
-  // Update last updated timestamp
-  document.getElementById('lastUpdated').textContent = 'Last scan: ' + LIVE_DATA.timestamp;
+  // Timestamp & session badge
+  const lu = document.getElementById('lastUpdated');
+  lu.textContent = 'Last scan: ' + LIVE_DATA.timestamp;
+  const badge = document.createElement('span');
+  badge.textContent = LIVE_DATA.session;
+  badge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(0,212,170,0.15);color:var(--accent);font-family:var(--font-mono);margin-left:8px;';
+  lu.appendChild(badge);
 
-  // Add session badge
-  const sessionBadge = document.createElement('span');
-  sessionBadge.textContent = LIVE_DATA.session;
-  sessionBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(0,212,170,0.15);color:var(--accent);font-family:var(--font-mono);margin-left:8px;';
-  document.getElementById('lastUpdated').appendChild(sessionBadge);
-
-  // Load stock data
-  currentData = LIVE_DATA.stocks;
-  renderTable(currentData);
-
-  // Update scan tag
-  const scanTags = LIVE_DATA.scan_summary.map(s => s.label + ' (' + s.count + ')').join(' · ');
-  document.getElementById('scanTag').textContent = scanTags;
-  document.getElementById('resultsMeta').textContent =
-    LIVE_DATA.total + ' stocks · ' + LIVE_DATA.date;
+  // Scan summary tags
+  const scanTags = (LIVE_DATA.scan_summary || []).map(s => s.label + ' (' + s.count + ')').join(' · ');
+  const stag = document.getElementById('stag');
+  if (stag) stag.textContent = scanTags || 'Live Scan';
+  const rmeta = document.getElementById('rmeta');
+  if (rmeta) rmeta.textContent = LIVE_DATA.total + ' stocks · ' + LIVE_DATA.date;
 }});
 // ─────────────────────────────────────────────────────────────────────────────
+
 """
 
-    # Insert injection just before the closing </script> tag at the end
-    html = html.replace("// ── INIT ──────────────────────────────────────────────────────────────────────",
-                        injection + "\n// ── INIT ──────────────────────────────────────────────────────────────────────")
+    # ── Insert just before the INIT marker ───────────────────────────────────
+    if INIT_MARKER in html:
+        html = html.replace(INIT_MARKER, injection + INIT_MARKER, 1)
+        print(f"[+] Injected at INIT marker.")
+    else:
+        # Fallback: inject before closing </script>
+        html = html.replace('</script>', injection + '\n</script>', 1)
+        print(f"[!] INIT marker not found — injected before </script>.")
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"[+] Injected {data['total']} stocks into {OUTPUT_FILE}")
+    print(f"[+] Saved {OUTPUT_FILE}")
+    print(f"[+] Stocks: {data['total']} | BUY: {data['buy_count']} | WATCH: {data['watch_count']} | AVOID: {data['avoid_count']}")
     print(f"[+] Session: {data['session']} | {data['timestamp']}")
 
 if __name__ == "__main__":
